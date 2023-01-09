@@ -15,8 +15,10 @@ package binary_heap
  *
  */
 
-// TODO: use generics to make this great
-// TODO: this has been implemented as a max-heap, but you should implement it a min-heap too.
+type BinaryHeap[T any] struct {
+	nodes      []T
+	isBiggerFn func(a, b T) bool
+}
 
 /*
  * This method is suboptimal. It is here for my own educational purposes.
@@ -28,12 +30,15 @@ package binary_heap
  *
  * The reason it is suboptimal is because each Push() operation runs on *O(log n)*,
  * and we do it for each element on the input list, so this method runs on *O(n log n)*.
- *
  */
-func SuboptimalToHeap(list []int) []int {
-	heap := []int{}
+func NewBinaryHeap[T any](list []T, isBiggerFn func(a, b T) bool) BinaryHeap[T] {
+	heap := BinaryHeap[T]{
+		nodes:      []T{},
+		isBiggerFn: isBiggerFn,
+	}
+
 	for _, e := range list {
-		heap = Push(heap, e)
+		heap.Push(e)
 	}
 
 	return heap
@@ -57,15 +62,13 @@ func SuboptimalToHeap(list []int) []int {
  *     See: https://ieeexplore.ieee.org/document/6312854
  *
  * I'll just use up() here, because I had to look up the meaning of the word sift.
- * *Rant*: why do they use words that are not familiar to non-English speakers to explain things?
- *
- * */
-func Push(heap []int, e int) []int {
+ */
+func (h *BinaryHeap[T]) Push(e T) {
 	// The leftmost open bottom position is always len(h) - so we append here.
-	heap = append(heap, e)
+	h.nodes = append(h.nodes, e)
 
 	// Move the new element up, until heap property is satisfied.
-	return up(heap, len(heap)-1)
+	h.up(len(h.nodes) - 1)
 }
 
 /*
@@ -78,47 +81,46 @@ func Push(heap []int, e int) []int {
  *      (the biggest child if max-heap, and the smallest child if min-heap).
  *      We do this until the condition is no longer true.
  */
-func Pop(heap []int) ([]int, int) {
-	if len(heap) == 0 {
-		return []int{}, -1
+func (h *BinaryHeap[T]) Pop() *T {
+	if len(h.nodes) == 0 {
+		return nil
 	}
 
 	// The element to pop from the heap
-	e := heap[0]
+	e := h.nodes[0]
 
 	// Replace the root with the last element on the last level
-	heap[0] = heap[len(heap)-1]
+	h.nodes[0] = h.nodes[len(h.nodes)-1]
 
 	// Remove the last element
-	heap = heap[0 : len(heap)-1]
+	h.nodes = h.nodes[0 : len(h.nodes)-1]
 
-	// Re-establish heap property, if needed
-	return down(heap), e
+	// Re-establish heap property, if needed, and return popped element.
+	h.down()
+	return &e
 }
 
-func up(heap []int, childIndex int) []int {
+func (h *BinaryHeap[T]) up(childIndex int) {
 	// We iterate until we reach the root of the tree
 	for childIndex > 0 {
 
 		// The parent of node at index *i*, is always at *floor(i-1/2)*
 		parentIndex := (childIndex - 1) / 2
 
-		// If the parent is already greater than the child, stop -> heap property satisfied.
-		if heap[parentIndex] > heap[childIndex] {
+		// If the parent already satisfies the heap property, stop.
+		if h.isBiggerFn(h.nodes[parentIndex], h.nodes[childIndex]) {
 			break
 		}
 
 		// If not, swap parent and child, and move one level up
-		x := heap[parentIndex]
-		heap[parentIndex] = heap[childIndex]
-		heap[childIndex] = x
+		x := h.nodes[parentIndex]
+		h.nodes[parentIndex] = h.nodes[childIndex]
+		h.nodes[childIndex] = x
 		childIndex = parentIndex
 	}
-
-	return heap
 }
 
-func down(heap []int) []int {
+func (h *BinaryHeap[T]) down() {
 	parentIndex := 0
 
 	for {
@@ -127,36 +129,39 @@ func down(heap []int) []int {
 		rightChildIndex := parentIndex*2 + 2
 
 		// If the current node has no children, we stop
-		if leftChildIndex > len(heap)-1 {
+		if leftChildIndex > len(h.nodes)-1 {
 			break
 		}
 
 		var childIndex int
 
 		// If the current node has no right child, left child is the biggest one.
-		if rightChildIndex > len(heap)-1 {
+		if rightChildIndex > len(h.nodes)-1 {
 			childIndex = leftChildIndex
-		} else if heap[rightChildIndex] > heap[leftChildIndex] {
+		} else if h.isBiggerFn(h.nodes[rightChildIndex], h.nodes[leftChildIndex]) {
 			// If the current node has a right child, and it is bigger than the left one, we use it.
+			// Note: in a max-heap, we use the bigger child and in a min-heap, we use the smaller child.
 			childIndex = rightChildIndex
 		} else {
-			// If the current node has a right child, but it is not bigger than the left one, we use the left one.
+			// If the current node has a right child, but it is not bigger/smaller than the left one, we use the left one.
 			childIndex = leftChildIndex
 		}
 
-		// If parent is already greater than the biggest child, stop.
-		if heap[parentIndex] > heap[childIndex] {
+		// If parent already satisfies the heap property, stop.
+		if h.isBiggerFn(h.nodes[parentIndex], h.nodes[childIndex]) {
 			break
 		}
 
 		// Otherwise, we swap the parent with its child.
-		x := heap[parentIndex]
-		heap[parentIndex] = heap[childIndex]
-		heap[childIndex] = x
+		x := h.nodes[parentIndex]
+		h.nodes[parentIndex] = h.nodes[childIndex]
+		h.nodes[childIndex] = x
 
 		// And move down the tree.
 		parentIndex = childIndex
 	}
+}
 
-	return heap
+func (h *BinaryHeap[T]) Len() int {
+	return len(h.nodes)
 }

@@ -9,21 +9,40 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test__SuboptimalToHeap(t *testing.T) {
+func Test__MaxHeap(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 
-	list := createRandomList(500)
-	heap := SuboptimalToHeap(list)
+	list := createRandomList(20)
+	heap := NewBinaryHeap(list, func(a, b int) bool { return a > b })
 
 	ns := []int{}
-	for len(heap) > 0 {
-		h, n := Pop(heap)
-		ns = append(ns, n)
-		heap = h
+	for heap.Len() > 0 {
+		n := heap.Pop()
+		ns = append(ns, *n)
 	}
 
-	// Note: j is i-1 here
-	assert.True(t, sort.SliceIsSorted(ns, func(i, j int) bool { return i < j }))
+	// Note: i and j are indexes and j is i-1
+	assert.True(t, sort.SliceIsSorted(ns, func(i, j int) bool {
+		return ns[i] > ns[j]
+	}))
+}
+
+func Test__MinHeap(t *testing.T) {
+	rand.Seed(time.Now().Unix())
+
+	list := createRandomList(20)
+	heap := NewBinaryHeap(list, func(a, b int) bool { return a < b })
+
+	ns := []int{}
+	for heap.Len() > 0 {
+		n := heap.Pop()
+		ns = append(ns, *n)
+	}
+
+	// Note: i and j are indexes and j is i-1
+	assert.True(t, sort.SliceIsSorted(ns, func(i, j int) bool {
+		return ns[i] < ns[j]
+	}))
 }
 
 func createRandomList(size int) []int {
