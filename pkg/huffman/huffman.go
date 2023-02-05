@@ -1,6 +1,8 @@
 package huffman
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 
@@ -16,6 +18,72 @@ type HuffmanNode struct {
 
 type HuffmanTree struct {
 	root *HuffmanNode
+}
+
+func Compress(input []byte) (*bytes.Buffer, error) {
+	// Build encoding table
+	f, err := FindFrequencies(input)
+	if err != nil {
+		return nil, fmt.Errorf("error finding character frequencies")
+	}
+
+	tree := NewHuffmanTree(f)
+	codes := tree.Codes()
+	// TODO: Write tree into encoded output too
+
+	// Encode input
+	buf := new(bytes.Buffer)
+
+	var currentWord uint32
+	var currentBitsUsed uint8
+	for _, b := range input {
+		code := codes[b]
+
+		// Check if the code fits into the current word.
+		// If not, part of it will have to go the next word
+		if currentBitsUsed+code.BitsUsed > 32 {
+			// Find out how many bits go into the current word
+			nextWordBits := (currentBitsUsed + code.BitsUsed) - 32
+			currentWordBits := code.BitsUsed - nextWordBits
+
+			// Select only the bits you are interested
+			// and put them into the current word.
+			result := code.Code & findMask(currentWordBits)
+			currentWord |= result << currentBitsUsed
+
+			// Save the current word, and put the remaining bits in the next one.
+			binary.Write(buf, binary.BigEndian, currentWord)
+			currentWord = code.Code >> nextWordBits
+			currentBitsUsed = nextWordBits
+			continue
+		}
+
+		// It fits into the current word,
+		// shift the code {currentBitsUsed} times to the left
+		// and OR the resulting mask with the current word.
+		// Increment the number of bits used.
+		mask := code.Code << currentBitsUsed
+		currentWord |= mask
+		currentBitsUsed += code.BitsUsed
+	}
+
+	// Make sure to write the current word out
+	binary.Write(buf, binary.BigEndian, currentWord)
+
+	return buf, nil
+}
+
+// TODO: document this properly
+func findMask(leftBits uint8) uint32 {
+	var mask uint32
+
+	for leftBits > 0 {
+		mask <<= 1
+		mask += 1
+		leftBits--
+	}
+
+	return mask
 }
 
 // TODO: document this function properly
@@ -35,14 +103,23 @@ func NewHuffmanTree(nodes binary_heap.BinaryHeap[HuffmanNode]) HuffmanTree {
 	return HuffmanTree{root: nodes.Pop()}
 }
 
-func (t *HuffmanTree) Codes() map[byte]string {
-	codes := map[byte]string{}
+type HuffmanCode struct {
+	Code     uint32
+	BitsUsed uint8
+}
 
-	var traverse func(int32, int, HuffmanNode)
-	traverse = func(code int32, bitsUsed int, node HuffmanNode) {
+func (c *HuffmanCode) String() string {
+	return fmt.Sprintf("%0"+strconv.Itoa(int(c.BitsUsed))+"b", c.Code)
+}
+
+func (t *HuffmanTree) Codes() map[byte]HuffmanCode {
+	codes := map[byte]HuffmanCode{}
+
+	var traverse func(uint32, uint8, HuffmanNode)
+	traverse = func(code uint32, bitsUsed uint8, node HuffmanNode) {
 		// This is a leaf node, just save the code
 		if node.Left == nil && node.Right == nil {
-			codes[node.Value] = fmt.Sprintf("%0"+strconv.Itoa(int(bitsUsed))+"b", code)
+			codes[node.Value] = HuffmanCode{Code: code, BitsUsed: bitsUsed}
 			return
 		}
 
