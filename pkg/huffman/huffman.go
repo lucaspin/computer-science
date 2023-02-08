@@ -16,6 +16,10 @@ type HuffmanNode struct {
 	Right  *HuffmanNode
 }
 
+func (n *HuffmanNode) IsLeaf() bool {
+	return n.Left == nil && n.Right == nil
+}
+
 type HuffmanTree struct {
 	root *HuffmanNode
 }
@@ -28,15 +32,121 @@ func Compress(input []byte) (*bytes.Buffer, error) {
 	}
 
 	tree := NewHuffmanTree(f)
-	codes := tree.Codes()
-	// TODO: Write tree into encoded output too
+	buffer := new(bytes.Buffer)
+	encodeTree(buffer, tree)
+	encodeInput(buffer, tree, input)
 
-	// Encode input
+	return buffer, nil
+}
+
+func Decompress(input []byte) (*bytes.Buffer, error) {
+	header, data, err := splitInput(input)
+	if err != nil {
+		return nil, err
+	}
+
+	tree := NewHuffmanTreeFromEncodedHeader(header)
 	buf := new(bytes.Buffer)
+	if err := decode(buf, data, tree); err != nil {
+		return nil, fmt.Errorf("error decoding input: %v", err)
+	}
+
+	return buf, nil
+}
+
+func decode(buf *bytes.Buffer, data []byte, tree HuffmanTree) error {
+	currentTreeNode := tree.root
+
+	for _, b := range data {
+		// Start at the most significant bit and look at each bit
+		// TODO: is this correct? Do we go left-to-right or right-to-left
+		for i := 7; i >= 0; i-- {
+			// Use bit to traverse tree
+			if (b & 1 << i) == 0 {
+				currentTreeNode = currentTreeNode.Left
+			} else {
+				currentTreeNode = currentTreeNode.Right
+			}
+
+			// If current node is a leaf one, print its value, and go back to root.
+			if currentTreeNode.IsLeaf() {
+				if err := binary.Write(buf, binary.BigEndian, currentTreeNode.Value); err != nil {
+					return fmt.Errorf("error writing value: %v", err)
+				}
+
+				currentTreeNode = tree.root
+			}
+		}
+	}
+
+	return nil
+}
+
+func splitInput(input []byte) ([]byte, []byte, error) {
+	var headerSize int32
+	err := binary.Read(bytes.NewReader(input[:4]), binary.BigEndian, &headerSize)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error finding header size: %v", err)
+	}
+
+	return input[4:headerSize], input[headerSize:], nil
+}
+
+func encodeTree(buffer *bytes.Buffer, huffmanTree HuffmanTree) error {
+	header := generateHeader(huffmanTree)
+	headerLen := int32(len(header))
+
+	// Write the header size (4 bytes)
+	if err := binary.Write(buffer, binary.BigEndian, headerLen); err != nil {
+		return fmt.Errorf("error writing header size: %v", err)
+	}
+
+	// Write the actual header.
+	if err := binary.Write(buffer, binary.BigEndian, header); err != nil {
+		return fmt.Errorf("error writing header: %v", err)
+	}
+
+	return nil
+}
+
+func generateHeader(huffmanTree HuffmanTree) []byte {
+	b := []byte{}
+	postOrderWalk(*huffmanTree.root, func(bytes []byte) {
+		b = append(b, bytes...)
+	})
+
+	return b
+}
+
+func postOrderWalk(node HuffmanNode, callback func(bytes []byte)) {
+	isNonLeaf := false
+
+	if node.Left != nil {
+		isNonLeaf = true
+		postOrderWalk(*node.Left, callback)
+	}
+
+	if node.Right != nil {
+		isNonLeaf = true
+		postOrderWalk(*node.Right, callback)
+	}
+
+	// TODO: this should not use a whole byte to write 0x00
+	if isNonLeaf {
+		callback([]byte{0x00})
+		return
+	}
+
+	// TODO: this should not use a whole byte to write 0xff
+	callback([]byte{0xff, node.Value})
+}
+
+func encodeInput(buffer *bytes.Buffer, huffmanTree HuffmanTree, rawInput []byte) error {
+	codes := huffmanTree.Codes()
 
 	var currentWord uint32
 	var currentBitsUsed uint8
-	for _, b := range input {
+	for _, b := range rawInput {
 		code := codes[b]
 
 		// Check if the code fits into the current word.
@@ -52,7 +162,11 @@ func Compress(input []byte) (*bytes.Buffer, error) {
 			currentWord |= result << currentBitsUsed
 
 			// Save the current word, and put the remaining bits in the next one.
-			binary.Write(buf, binary.BigEndian, currentWord)
+			err := binary.Write(buffer, binary.BigEndian, currentWord)
+			if err != nil {
+				return err
+			}
+
 			currentWord = code.Code >> nextWordBits
 			currentBitsUsed = nextWordBits
 			continue
@@ -68,9 +182,7 @@ func Compress(input []byte) (*bytes.Buffer, error) {
 	}
 
 	// Make sure to write the current word out
-	binary.Write(buf, binary.BigEndian, currentWord)
-
-	return buf, nil
+	return binary.Write(buffer, binary.BigEndian, currentWord)
 }
 
 // TODO: document this properly
@@ -84,6 +196,11 @@ func findMask(leftBits uint8) uint32 {
 	}
 
 	return mask
+}
+
+// TODO
+func NewHuffmanTreeFromEncodedHeader(header []byte) HuffmanTree {
+	return HuffmanTree{}
 }
 
 // TODO: document this function properly
