@@ -63,7 +63,8 @@ func decode(buf *bytes.Buffer, data []byte, tree HuffmanTree) error {
 		// Start at the most significant bit and look at each bit
 		for i := 7; i >= 0; i-- {
 			// Use bit to traverse tree
-			if (b & (1 << i)) == 0 {
+			bit := b & (1 << i)
+			if bit == 0 {
 				currentTreeNode = currentTreeNode.Left
 			} else {
 				currentTreeNode = currentTreeNode.Right
@@ -90,29 +91,17 @@ func splitInput(input []byte) ([]byte, []byte, error) {
 		return nil, nil, fmt.Errorf("error finding header size: %v", err)
 	}
 
-	fmt.Printf("Header size from 4-byte piece: %d\n", headerSize)
-
-	header := input[4 : headerSize+4]
-	encoded := input[headerSize+4:]
-
-	fmt.Printf("Header size: %d\n", len(header))
-	fmt.Printf("Encoded data size: %d\n", len(encoded))
-
-	return header, encoded, nil
+	return input[4 : headerSize+4], input[headerSize+4:], nil
 }
 
 func encodeTree(buffer *bytes.Buffer, huffmanTree HuffmanTree) error {
 	header := generateHeader(huffmanTree)
 	headerLen := int32(len(header))
 
-	fmt.Printf("Encoding - header size: %d\n", headerLen)
-
 	// Write the header size (4 bytes)
 	if err := binary.Write(buffer, binary.BigEndian, headerLen); err != nil {
 		return fmt.Errorf("error writing header size: %v", err)
 	}
-
-	fmt.Printf("Header: %v\n", header)
 
 	// Write the actual header.
 	if err := binary.Write(buffer, binary.BigEndian, header); err != nil {
@@ -169,39 +158,41 @@ func encodeInput(buffer *bytes.Buffer, huffmanTree HuffmanTree, rawInput []byte)
 			nextWordBits := (currentBitsUsed + code.BitsUsed) - 32
 			currentWordBits := code.BitsUsed - nextWordBits
 
-			fmt.Printf(
-				"Code '%s' does not fit into current word - word='%032b' next=%d, current=%d\n",
-				code.String(), currentWord, nextWordBits, currentWordBits,
-			)
-
 			// Put only the bits that fit into the current word, and save it.
 			currentWord = (currentWord << uint32(currentWordBits)) + (code.Code >> uint32(nextWordBits))
-			fmt.Printf("Saving word '%032b'...\n", currentWord)
 			err := binary.Write(buffer, binary.BigEndian, currentWord)
 			if err != nil {
 				return err
 			}
 
 			// Put the remaining bits in the next one.
-			currentWord = code.Code >> currentWordBits
-			fmt.Printf("Current word updated: '%032b'...\n", currentWord)
+			currentWord = code.Code & maskForBits(nextWordBits)
 			currentBitsUsed = nextWordBits
 			continue
 		}
-
-		fmt.Printf("Code '%s' fits into current word '%032b'\n", code.String(), currentWord)
 
 		// It fits into the current word,
 		// shift the current word to the left,
 		// to open space for the new code, and add the code to the word.
 		currentWord = (currentWord << uint32(code.BitsUsed)) + code.Code
 		currentBitsUsed += code.BitsUsed
-
-		fmt.Printf("Word updated: '%032b'\n", currentWord)
 	}
 
-	// Make sure to write the current word out
+	// Pad the current word and write it out too
+	currentWord <<= (32 - currentBitsUsed)
 	return binary.Write(buffer, binary.BigEndian, currentWord)
+}
+
+// TODO: rename this
+func maskForBits(rightBits uint8) uint32 {
+	var mask uint32
+	for rightBits > 0 {
+		mask <<= 1
+		mask += 1
+		rightBits--
+	}
+
+	return mask
 }
 
 // TODO

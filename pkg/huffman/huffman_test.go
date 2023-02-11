@@ -22,7 +22,7 @@ func Test__Codes(t *testing.T) {
 }
 
 func Test__Compress(t *testing.T) {
-	text := "let us write a whole lot of characters here"
+	text := "let us write something here and see what comes out of the other side"
 	output, err := Compress([]byte(text))
 	assert.NoError(t, err)
 
