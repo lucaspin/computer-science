@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/lucaspin/computer-science/pkg/binary_heap"
+	"github.com/lucaspin/computer-science/pkg/stack"
 )
 
 type HuffmanNode struct {
@@ -58,11 +59,11 @@ func decode(buf *bytes.Buffer, data []byte, tree HuffmanTree) error {
 	currentTreeNode := tree.root
 
 	for _, b := range data {
+
 		// Start at the most significant bit and look at each bit
-		// TODO: is this correct? Do we go left-to-right or right-to-left
 		for i := 7; i >= 0; i-- {
 			// Use bit to traverse tree
-			if (b & 1 << i) == 0 {
+			if (b & (1 << i)) == 0 {
 				currentTreeNode = currentTreeNode.Left
 			} else {
 				currentTreeNode = currentTreeNode.Right
@@ -89,17 +90,29 @@ func splitInput(input []byte) ([]byte, []byte, error) {
 		return nil, nil, fmt.Errorf("error finding header size: %v", err)
 	}
 
-	return input[4:headerSize], input[headerSize:], nil
+	fmt.Printf("Header size from 4-byte piece: %d\n", headerSize)
+
+	header := input[4 : headerSize+4]
+	encoded := input[headerSize+4:]
+
+	fmt.Printf("Header size: %d\n", len(header))
+	fmt.Printf("Encoded data size: %d\n", len(encoded))
+
+	return header, encoded, nil
 }
 
 func encodeTree(buffer *bytes.Buffer, huffmanTree HuffmanTree) error {
 	header := generateHeader(huffmanTree)
 	headerLen := int32(len(header))
 
+	fmt.Printf("Encoding - header size: %d\n", headerLen)
+
 	// Write the header size (4 bytes)
 	if err := binary.Write(buffer, binary.BigEndian, headerLen); err != nil {
 		return fmt.Errorf("error writing header size: %v", err)
 	}
+
+	fmt.Printf("Header: %v\n", header)
 
 	// Write the actual header.
 	if err := binary.Write(buffer, binary.BigEndian, header); err != nil {
@@ -156,51 +169,72 @@ func encodeInput(buffer *bytes.Buffer, huffmanTree HuffmanTree, rawInput []byte)
 			nextWordBits := (currentBitsUsed + code.BitsUsed) - 32
 			currentWordBits := code.BitsUsed - nextWordBits
 
-			// Select only the bits you are interested
-			// and put them into the current word.
-			result := code.Code & findMask(currentWordBits)
-			currentWord |= result << currentBitsUsed
+			fmt.Printf(
+				"Code '%s' does not fit into current word - word='%032b' next=%d, current=%d\n",
+				code.String(), currentWord, nextWordBits, currentWordBits,
+			)
 
-			// Save the current word, and put the remaining bits in the next one.
+			// Put only the bits that fit into the current word, and save it.
+			currentWord = (currentWord << uint32(currentWordBits)) + (code.Code >> uint32(nextWordBits))
+			fmt.Printf("Saving word '%032b'...\n", currentWord)
 			err := binary.Write(buffer, binary.BigEndian, currentWord)
 			if err != nil {
 				return err
 			}
 
-			currentWord = code.Code >> nextWordBits
+			// Put the remaining bits in the next one.
+			currentWord = code.Code >> currentWordBits
+			fmt.Printf("Current word updated: '%032b'...\n", currentWord)
 			currentBitsUsed = nextWordBits
 			continue
 		}
 
+		fmt.Printf("Code '%s' fits into current word '%032b'\n", code.String(), currentWord)
+
 		// It fits into the current word,
-		// shift the code {currentBitsUsed} times to the left
-		// and OR the resulting mask with the current word.
-		// Increment the number of bits used.
-		mask := code.Code << currentBitsUsed
-		currentWord |= mask
+		// shift the current word to the left,
+		// to open space for the new code, and add the code to the word.
+		currentWord = (currentWord << uint32(code.BitsUsed)) + code.Code
 		currentBitsUsed += code.BitsUsed
+
+		fmt.Printf("Word updated: '%032b'\n", currentWord)
 	}
 
 	// Make sure to write the current word out
 	return binary.Write(buffer, binary.BigEndian, currentWord)
 }
 
-// TODO: document this properly
-func findMask(leftBits uint8) uint32 {
-	var mask uint32
-
-	for leftBits > 0 {
-		mask <<= 1
-		mask += 1
-		leftBits--
-	}
-
-	return mask
-}
-
 // TODO
 func NewHuffmanTreeFromEncodedHeader(header []byte) HuffmanTree {
-	return HuffmanTree{}
+	stack := stack.NewStack[HuffmanNode]()
+
+	for i := 0; i < len(header); {
+
+		// If we read a 0xff, we reached a leaf node.
+		// Read the next byte (its value), and push it into the stack.
+		if header[i] == 0xff {
+			n := HuffmanNode{Value: header[i+1]}
+			stack.Push(&n)
+			i += 2
+			continue
+		}
+
+		// If we read a 0x00, we check the stack.
+		// If only one element is present in it, we are done.
+		if stack.Len() == 1 {
+			break
+		}
+
+		// If more elements are present, we combine the first two into a new one.
+		// TODO: explain why the first goes to the right and second goes to the left.
+		first, _ := stack.Pop()
+		second, _ := stack.Pop()
+		stack.Push(&HuffmanNode{Left: second, Right: first})
+		i++
+	}
+
+	root, _ := stack.Pop()
+	return HuffmanTree{root: root}
 }
 
 // TODO: document this function properly
@@ -227,6 +261,13 @@ type HuffmanCode struct {
 
 func (c *HuffmanCode) String() string {
 	return fmt.Sprintf("%0"+strconv.Itoa(int(c.BitsUsed))+"b", c.Code)
+}
+
+func (t *HuffmanTree) PrintCodes() {
+	codes := t.Codes()
+	for b, code := range codes {
+		fmt.Printf("'%c': %s\n", b, code.String())
+	}
 }
 
 func (t *HuffmanTree) Codes() map[byte]HuffmanCode {

@@ -18,18 +18,17 @@ func Test__FindFrequencies(t *testing.T) {
 func Test__Codes(t *testing.T) {
 	h, _ := FindFrequencies([]byte("go go gophers"))
 	tree := NewHuffmanTree(h)
-	codes := tree.Codes()
-
-	for b, code := range codes {
-		fmt.Printf("'%c': %s\n", b, code.String())
-	}
+	tree.PrintCodes()
 }
 
 func Test__Compress(t *testing.T) {
-	text := "go go gophersgo go gophersgo go gophersgo go gophersgo go gophersgo go gophers"
+	text := "let us write a whole lot of characters here"
 	output, err := Compress([]byte(text))
 	assert.NoError(t, err)
-	fmt.Printf("Result: %d\n", output.Len())
+
+	raw, err := Decompress(output.Bytes())
+	assert.NoError(t, err)
+	assert.Equal(t, text, raw.String())
 }
 
 func Test__Flate(t *testing.T) {
