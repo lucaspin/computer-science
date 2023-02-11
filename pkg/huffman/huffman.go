@@ -34,34 +34,48 @@ func Compress(input []byte) (*bytes.Buffer, error) {
 
 	tree := NewHuffmanTree(f)
 	buffer := new(bytes.Buffer)
-	encodeTree(buffer, tree)
+	encodeHeader(buffer, tree, int32(len(input)))
 	encodeInput(buffer, tree, input)
 
 	return buffer, nil
 }
 
+type header struct {
+	size         int32
+	rawInputSize int32
+	b            []byte
+}
+
 func Decompress(input []byte) (*bytes.Buffer, error) {
-	header, data, err := splitInput(input)
+	header, err := readHeader(input)
 	if err != nil {
 		return nil, err
 	}
 
-	tree := NewHuffmanTreeFromEncodedHeader(header)
+	tree := NewHuffmanTreeFromEncodedHeader(header.b)
 	buf := new(bytes.Buffer)
-	if err := decode(buf, data, tree); err != nil {
+	if err := decode(buf, input[header.size:], tree, header.rawInputSize); err != nil {
 		return nil, fmt.Errorf("error decoding input: %v", err)
 	}
 
 	return buf, nil
 }
 
-func decode(buf *bytes.Buffer, data []byte, tree HuffmanTree) error {
+func decode(buf *bytes.Buffer, data []byte, tree HuffmanTree, rawInputSize int32) error {
 	currentTreeNode := tree.root
+	decodedSize := int32(0)
 
 	for _, b := range data {
 
 		// Start at the most significant bit and look at each bit
 		for i := 7; i >= 0; i-- {
+
+			// If we decoded all the data, stop.
+			// everything else is just padding.
+			if decodedSize >= rawInputSize {
+				return nil
+			}
+
 			// Use bit to traverse tree
 			bit := b & (1 << i)
 			if bit == 0 {
@@ -76,6 +90,7 @@ func decode(buf *bytes.Buffer, data []byte, tree HuffmanTree) error {
 					return fmt.Errorf("error writing value: %v", err)
 				}
 
+				decodedSize++
 				currentTreeNode = tree.root
 			}
 		}
@@ -84,22 +99,37 @@ func decode(buf *bytes.Buffer, data []byte, tree HuffmanTree) error {
 	return nil
 }
 
-func splitInput(input []byte) ([]byte, []byte, error) {
+func readHeader(input []byte) (*header, error) {
 	var headerSize int32
 	err := binary.Read(bytes.NewReader(input[:4]), binary.BigEndian, &headerSize)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error finding header size: %v", err)
+		return nil, fmt.Errorf("error finding header size: %v", err)
 	}
 
-	return input[4 : headerSize+4], input[headerSize+4:], nil
+	var rawInputSize int32
+	err = binary.Read(bytes.NewReader(input[4:8]), binary.BigEndian, &rawInputSize)
+	if err != nil {
+		return nil, fmt.Errorf("error finding header size: %v", err)
+	}
+
+	return &header{
+		size:         8 + headerSize,
+		rawInputSize: rawInputSize,
+		b:            input[8 : headerSize+8],
+	}, nil
 }
 
-func encodeTree(buffer *bytes.Buffer, huffmanTree HuffmanTree) error {
+func encodeHeader(buffer *bytes.Buffer, huffmanTree HuffmanTree, rawInputSize int32) error {
 	header := generateHeader(huffmanTree)
 	headerLen := int32(len(header))
 
 	// Write the header size (4 bytes)
 	if err := binary.Write(buffer, binary.BigEndian, headerLen); err != nil {
+		return fmt.Errorf("error writing header size: %v", err)
+	}
+
+	// Write the raw input size (4 bytes)
+	if err := binary.Write(buffer, binary.BigEndian, rawInputSize); err != nil {
 		return fmt.Errorf("error writing header size: %v", err)
 	}
 

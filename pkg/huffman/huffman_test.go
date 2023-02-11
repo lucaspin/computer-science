@@ -22,7 +22,7 @@ func Test__Codes(t *testing.T) {
 }
 
 func Test__Compress(t *testing.T) {
-	text := "let us write something here and see what comes out of the other side"
+	text := "go go gophers"
 	output, err := Compress([]byte(text))
 	assert.NoError(t, err)
 
@@ -36,7 +36,7 @@ func Test__Flate(t *testing.T) {
 	writer, err := flate.NewWriter(b, flate.HuffmanOnly)
 	assert.NoError(t, err)
 
-	n, err := writer.Write([]byte("go go gophersgo go gophersgo go gophersgo go gophersgo go gophersgo go gophers"))
+	n, err := writer.Write([]byte("go go gophers"))
 	assert.NoError(t, err)
 	fmt.Printf("Wrote %d bytes.\n", n)
 	err = writer.Close()
